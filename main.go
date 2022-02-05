@@ -70,7 +70,7 @@ func initOtel(ctx context.Context) (trace.Tracer, func()) {
 	// Init otel
 	exporter, err := newExporter(ctx)
 	if err != nil {
-		log.Fatalf("failed to initialize exporter: %v", err)
+		log.Fatalf("failed to initialize exporter: %v\n", err)
 	}
 
 	tp := newTraceProvider(exporter)
@@ -82,7 +82,7 @@ func initOtel(ctx context.Context) (trace.Tracer, func()) {
 func initBuildKiteClient() *buildkite.Client {
 	config, err := buildkite.NewTokenConfig(BuildKiteApiToken, false)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("failed to init BuildKite client: %v\n", err)
 	}
 
 	return buildkite.NewClient(config.Client())
@@ -117,7 +117,9 @@ func main() {
 		log.Println("Calling API on page", page)
 		builds, resp, err := bk.Builds.ListByPipeline(BuildKiteOrgName, BuildKitePipelineName, buildListOptions)
 		if err != nil {
-			log.Fatal(err)
+			log.Printf("Issues calling BuildKite API: %v\n", err)
+			// TODO: backoff retry with retry limit?
+			continue
 		}
 		for _, b := range builds {
 			wg.Add(1)
