@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -31,11 +32,10 @@ var (
 	BuildKitePipelineName  = os.Getenv("BUILDKITE_PIPELINE")
 	BuildKiteMaxPagination = 100
 
-	HoneycombEndPoint    = "api.honeycomb.io:443"
-	HoneycombDataSetName = "buildkite-pipelines"
-	HoneycombHeaders     = map[string]string{
+	HoneycombEndPoint = "api.honeycomb.io:443"
+	HoneycombHeaders  = map[string]string{
 		"x-honeycomb-team":    os.Getenv("HONEYCOMB_API_KEY"),
-		"x-honeycomb-dataset": HoneycombDataSetName,
+		"x-honeycomb-dataset": os.Getenv("HONEYCOMB_DATASET"),
 	}
 )
 
@@ -179,6 +179,14 @@ func processBuild(ctx context.Context, tracer trace.Tracer, b buildkite.Build, w
 	if b.WebURL != nil {
 		buildSpan.SetAttributes(attribute.String("url", *b.WebURL))
 	}
+	// TODO: allow filtering metadata keys
+	if b.MetaData != nil {
+		if metadata, ok := b.MetaData.(map[string]string); ok {
+			for k, v := range metadata {
+				buildSpan.SetAttributes(attribute.String("build_"+k, v))
+			}
+		}
+	}
 
 	// create job spans
 	for _, j := range b.Jobs {
@@ -216,12 +224,35 @@ func processJob(ctx context.Context, tracer trace.Tracer, j *buildkite.Job) {
 		}
 	}
 
+	// job metadata
+	jSpan.SetAttributes(attribute.Int("retry_count", j.RetriesCount))
+	jSpan.SetAttributes(attribute.Bool("retried", j.Retried))
+	jSpan.SetAttributes(attribute.Bool("soft_failed", j.SoftFailed))
+	if j.LogsURL != nil {
+		jSpan.SetAttributes(attribute.String("url", *j.LogsURL))
+	}
+	if j.StepKey != nil {
+		jSpan.SetAttributes(attribute.String("step_key", *j.StepKey))
+	}
+	if j.ExitStatus != nil {
+		jSpan.SetAttributes(attribute.Int("exit_status", *j.ExitStatus))
+	}
+
 	// agent data
 	if j.Agent.IPAddress != nil {
 		jSpan.SetAttributes(attribute.String("agent_ip", *j.Agent.IPAddress))
 	}
 	if j.Agent.Version != nil {
 		jSpan.SetAttributes(attribute.String("agent_version", *j.Agent.Version))
+	}
+	// TODO: allow filtering metadata keys
+	for _, m := range j.Agent.Metadata {
+		// Assuming that agent metadata are kv pairs separated by '='
+		token := strings.Split(m, "=")
+		if len(token) != 2 {
+			continue
+		}
+		jSpan.SetAttributes(attribute.String("agent_"+token[0], token[1]))
 	}
 
 	jSpan.End(trace.WithTimestamp(j.FinishedAt.Time))
