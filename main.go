@@ -53,31 +53,29 @@ func newExporter(ctx context.Context) (*otlptrace.Exporter, error) {
 // newTraceProvider create a trace provider
 func newTraceProvider(exp *otlptrace.Exporter) *sdktrace.TracerProvider {
 	// The service.name attribute is required.
-	resource :=
-		resource.NewWithAttributes(
-			semconv.SchemaURL,
-			semconv.ServiceNameKey.String(ServiceName),
-			semconv.ServiceVersionKey.String(ServiceVersion),
-		)
+	res := resource.NewWithAttributes(
+		semconv.SchemaURL,
+		semconv.ServiceNameKey.String(ServiceName),
+		semconv.ServiceVersionKey.String(ServiceVersion),
+	)
 
 	return sdktrace.NewTracerProvider(
 		sdktrace.WithBatcher(exp),
-		sdktrace.WithResource(resource),
+		sdktrace.WithResource(res),
 	)
 }
 
-// init opentelemetry sdk setup
-func initOtel(ctx context.Context) trace.Tracer {
+// initOtel returns a tracer object and a function that help handler graceful shutdown
+func initOtel(ctx context.Context) (trace.Tracer, func()) {
 	// Init otel
 	exporter, err := newExporter(ctx)
 	if err != nil {
 		log.Fatalf("failed to initialize exporter: %v", err)
 	}
-	tp := newTraceProvider(exporter)
-	// Handle shutdown for Trace Provider
-	defer func() { _ = tp.Shutdown(ctx) }()
 
-	return tp.Tracer("BuildKiteExporter")
+	tp := newTraceProvider(exporter)
+
+	return tp.Tracer(ServiceName), func() { _ = tp.Shutdown(ctx) }
 }
 
 // init buildkite client
@@ -95,7 +93,9 @@ func main() {
 	ctx := context.Background()
 
 	bk := initBuildKiteClient()
-	tracer := initOtel(ctx)
+
+	tracer, shutdown := initOtel(ctx)
+	defer shutdown()
 
 	// BuildKite pagination loop
 	wg := &sync.WaitGroup{}
