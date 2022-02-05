@@ -176,6 +176,9 @@ func processBuild(ctx context.Context, tracer trace.Tracer, b buildkite.Build, w
 	if b.Author != nil {
 		buildSpan.SetAttributes(attribute.String("author", b.Author.Email))
 	}
+	if b.WebURL != nil {
+		buildSpan.SetAttributes(attribute.String("url", *b.WebURL))
+	}
 
 	// create job spans
 	for _, j := range b.Jobs {
