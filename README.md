@@ -8,6 +8,8 @@ Tracing/Metrics/APM providers that support OpenTelemetry protocol (DataDog, Graf
 
 ![image](https://user-images.githubusercontent.com/26684313/152633754-e83b05f1-f552-4afd-b7bd-1c0405d7839a.png)
 
+![image](https://user-images.githubusercontent.com/26684313/152633824-804545e6-3e18-4193-b4f3-bff8202842b6.png)
+
 This was built as a quick POC / MVP for my daily use cases but PRs/Issues are more than welcome.
 
 Totally inspired by https://github.com/zoidbergwill/gitlab-honeycomb-buildevents-webhooks-sink
