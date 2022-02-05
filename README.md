@@ -7,3 +7,5 @@ Worth to note that this program is using 100% OpenTelemetry SDK so Honeycomb can
 with any Tracing/Metrics/APM providers that support OpenTelemetry protocol (DataDog, Grafana Tempo etc...)
 
 This was built as a quick POC / MVP for my daily use cases but PRs/Issues are more than welcome.
+
+Totally inspired by https://github.com/zoidbergwill/gitlab-honeycomb-buildevents-webhooks-sink
