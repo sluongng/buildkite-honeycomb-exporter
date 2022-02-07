@@ -269,12 +269,20 @@ func processBuild(ctx context.Context, tracer trace.Tracer, b buildkite.Build, w
 	if b.WebURL != nil {
 		buildSpan.SetAttributes(attribute.String("url", *b.WebURL))
 	}
+
 	// TODO: allow filtering metadata keys
 	if b.MetaData != nil {
-		if metadata, ok := b.MetaData.(map[string]string); ok {
-			for k, v := range metadata {
-				buildSpan.SetAttributes(attribute.String("build_"+k, v))
+		switch m := b.MetaData.(type) {
+		// this cannot be casted directly to map[string]string
+		case map[string]interface{}:
+			for k, v := range m {
+				switch val := v.(type) {
+				case string:
+					buildSpan.SetAttributes(attribute.String("build_"+k, val))
+				default:
+				}
 			}
+		default:
 		}
 	}
 
