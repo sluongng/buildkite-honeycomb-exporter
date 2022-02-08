@@ -6,6 +6,7 @@ import (
 
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.7.0"
@@ -37,6 +38,19 @@ func newTraceProvider(exp *otlptrace.Exporter) *sdktrace.TracerProvider {
 		sdktrace.WithBatcher(exp),
 		sdktrace.WithResource(res),
 	)
+}
+
+// newDebugTracerProvider creates a trace provider that will print all traces as
+// JSON to stdout.  Intended for development purposes only.
+//
+// User can simply replace newTraceProvider() call with this.
+func newDebugTracerProvider() *sdktrace.TracerProvider {
+	exporter, err := stdouttrace.New(stdouttrace.WithPrettyPrint())
+	if err != nil {
+		log.Fatal("Could not init debug exporter", err)
+	}
+
+	return sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
 }
 
 // initOtel returns a tracer object and a function that help handler graceful shutdown
