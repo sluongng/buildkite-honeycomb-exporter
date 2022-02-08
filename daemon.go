@@ -1,11 +1,8 @@
 package main
 
 import (
-	"bufio"
 	"context"
-	"fmt"
 	"log"
-	"os"
 	"sync"
 	"time"
 
@@ -13,84 +10,82 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// Honeycomb has max data retention of 60 days
-// so we should not need to send more than that worth of data
-//
-// For subsequent runs, only query from when last run left off
-var lastFinishedAt = time.Now().AddDate(0, -2, 0)
+// daemon contains all the info needed by the goroutines inside the long-lived process
+type daemon struct {
+	lastFinishedAt time.Time
 
-const CachePath = "/tmp/buildkite-id-cache.txt"
+	tracer    trace.Tracer
+	buildKite *buildkite.Client
 
-func loadCache(cacheFile *os.File) map[string]struct{} {
-	result := make(map[string]struct{})
-	scanner := bufio.NewScanner(cacheFile)
-	for scanner.Scan() {
-		result[scanner.Text()] = struct{}{}
-	}
+	wg            *sync.WaitGroup
+	sleepDuration time.Duration
 
-	fmt.Printf("loading cache: %d lines\n", len(result))
-
-	return result
+	cacheFilePath string
 }
 
-func writeCache(cacheBuildIDs map[string]struct{}, cacheFile *os.File) error {
-	err := cacheFile.Truncate(0)
-	if err != nil {
-		return fmt.Errorf("error truncating cache: %v", err)
-	}
-	_, err = cacheFile.Seek(0, 0)
-	if err != nil {
-		return fmt.Errorf("error seeking cache: %v", err)
-	}
+// NewDaemon produce daemon struct that can be executed as a long-lived process
+func NewDaemon(
+	tracer trace.Tracer,
+	buildKite *buildkite.Client,
+	sleepDuration time.Duration,
+	cacheFilePath string,
+) *daemon {
+	wg := &sync.WaitGroup{}
 
-	w := bufio.NewWriter(cacheFile)
-	defer w.Flush()
+	// Default to HoneycombMaxRetention on initial run
+	// should be updated on subsequent runs
+	lastFinishedAt := time.Now().Add(-1 * HoneycombMaxRetention)
 
-	for k := range cacheBuildIDs {
-		_, err := w.WriteString(k + "\n")
-		if err != nil {
-			return fmt.Errorf("error writing cache: %v", err)
-		}
+	return &daemon{
+		lastFinishedAt,
+		tracer,
+		buildKite,
+		wg,
+		sleepDuration,
+		cacheFilePath,
 	}
+}
 
-	return nil
+// Exec execute the daemon as a long-lived process
+func (d *daemon) Exec(ctx context.Context) {
+	// TODO: implement graceful shutdown when SIGTERM/SIGKILL
+	for {
+		d.processBuildKite(ctx)
+
+		log.Printf("sleeping for %s", d.sleepDuration)
+		time.Sleep(d.sleepDuration)
+	}
 }
 
 // BuildKite pagination loop
-func processBuildKite(ctx context.Context, bk *buildkite.Client, tracer trace.Tracer) {
-	// load cache file on each run
-	f, err := os.OpenFile(CachePath, os.O_RDWR|os.O_CREATE, 0775)
-	if err != nil {
-		log.Fatalf("could not open cache file: %v\n", err)
+func (d *daemon) processBuildKite(ctx context.Context) {
+	cache := NewCache(d.cacheFilePath)
+	defer cache.fileStore.Close()
+
+	cachedBuildIDs := cache.loadCache()
+
+	buildListOptions := &buildkite.BuildsListOptions{
+		// Only query from last run's cut off point to limit the number of
+		// requests needed on subsequent runs.
+		FinishedFrom: d.lastFinishedAt,
+		// Possible values are: running, scheduled, passed, failed, canceled, skipped and not_run.
+		// filters for only 'finished' states
+		State: []string{"passed", "failed", "canceled", "skipped"},
+		// Pagination options
+		ListOptions: buildkite.ListOptions{
+			Page:    1,
+			PerPage: BuildKiteMaxPagination,
+		},
 	}
-	defer f.Close()
-
-	cachedBuildIDs := loadCache(f)
-
-	// track what is the latest build finish time
-	runFinishedAt := lastFinishedAt
-
-	wg := &sync.WaitGroup{}
-	page := 1
 	for {
-		buildListOptions := &buildkite.BuildsListOptions{
-			FinishedFrom: lastFinishedAt,
-			// Possible values are: running, scheduled, passed, failed, canceled, skipped and not_run.
-			// filters for only 'finished' states
-			State: []string{"passed", "failed", "canceled", "skipped"},
-			ListOptions: buildkite.ListOptions{
-				Page:    page,
-				PerPage: BuildKiteMaxPagination,
-			},
-		}
-
-		log.Println("Calling API on page", page)
-		builds, resp, err := bk.Builds.ListByPipeline(BuildKiteOrgName, BuildKitePipelineName, buildListOptions)
+		log.Println("Calling API on page", buildListOptions.Page)
+		builds, resp, err := d.buildKite.Builds.ListByPipeline(BuildKiteOrgName, BuildKitePipelineName, buildListOptions)
 		if err != nil {
 			log.Printf("Issues calling BuildKite API: %v\n", err)
 			// TODO: backoff retry with retry limit?
 			continue
 		}
+
 		for _, b := range builds {
 			if _, ok := cachedBuildIDs[*b.ID]; ok {
 				// build ID is in cache, skip processing
@@ -101,31 +96,28 @@ func processBuildKite(ctx context.Context, bk *buildkite.Client, tracer trace.Tr
 			// add build ID to cache
 			cachedBuildIDs[*b.ID] = struct{}{}
 
-			if b.FinishedAt != nil && b.FinishedAt.After(runFinishedAt) {
-				runFinishedAt = b.FinishedAt.Time
+			if b.FinishedAt != nil && b.FinishedAt.After(d.lastFinishedAt) {
+				d.lastFinishedAt = b.FinishedAt.Time
 			}
 
-			wg.Add(1)
-			go processBuild(ctx, tracer, b, wg)
+			d.wg.Add(1)
+			go d.processBuild(ctx, b)
 		}
 
 		// use buildkite response header to determine next page
 		if resp.NextPage == 0 {
 			break
 		}
-		page = resp.NextPage
+
+		buildListOptions.Page = resp.NextPage
 	}
 
 	// store all build IDs each run into cache
-	err = writeCache(cachedBuildIDs, f)
+	err := cache.writeCache(cachedBuildIDs)
 	if err != nil {
 		log.Fatalf("error writing cache: %v", err)
 	}
 
-	// Update future runs query starting point so that
-	// we don't have to read 2 months worth each time.
-	lastFinishedAt = runFinishedAt
-
 	// ensure all workers are finished
-	wg.Wait()
+	d.wg.Wait()
 }

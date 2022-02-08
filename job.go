@@ -10,13 +10,13 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-func processJob(ctx context.Context, tracer trace.Tracer, j *buildkite.Job) {
+func (d *daemon) processJob(ctx context.Context, buildNumber string, j *buildkite.Job) {
 	if j.StartedAt == nil || j.FinishedAt == nil {
 		return
 	}
 
 	// agent timing
-	_, jSpan := tracer.Start(ctx, *j.Name, trace.WithTimestamp(j.StartedAt.Time))
+	_, jSpan := d.tracer.Start(ctx, *j.Name, trace.WithTimestamp(j.StartedAt.Time))
 	jSpan.AddEvent("created", trace.WithTimestamp(j.CreatedAt.Time))
 	if j.ScheduledAt != nil {
 		jSpan.AddEvent("scheduled", trace.WithTimestamp(j.ScheduledAt.Time))

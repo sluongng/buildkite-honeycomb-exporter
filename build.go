@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"sync"
 
 	"github.com/buildkite/go-buildkite/v3/buildkite"
 	"go.opentelemetry.io/otel/attribute"
@@ -12,8 +11,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-func processBuild(ctx context.Context, tracer trace.Tracer, b buildkite.Build, wg *sync.WaitGroup) {
-	defer wg.Done()
+func (d *daemon) processBuild(ctx context.Context, b buildkite.Build) {
+	defer d.wg.Done()
 
 	log.Printf("processing build %d finished at %s", *b.Number, b.FinishedAt)
 
@@ -22,7 +21,7 @@ func processBuild(ctx context.Context, tracer trace.Tracer, b buildkite.Build, w
 	}
 
 	// create build span
-	buildCtx, buildSpan := tracer.Start(ctx, fmt.Sprintf("%d", *b.Number), trace.WithTimestamp(b.StartedAt.Time))
+	buildCtx, buildSpan := d.tracer.Start(ctx, fmt.Sprintf("%d", *b.Number), trace.WithTimestamp(b.StartedAt.Time))
 
 	// build timing
 	buildSpan.AddEvent("created", trace.WithTimestamp(b.StartedAt.Time))
@@ -75,7 +74,7 @@ func processBuild(ctx context.Context, tracer trace.Tracer, b buildkite.Build, w
 
 	// create job spans
 	for _, j := range b.Jobs {
-		processJob(buildCtx, tracer, j)
+		d.processJob(buildCtx, *b.ID, j)
 	}
 
 	buildSpan.End(trace.WithTimestamp(b.FinishedAt.Time))
