@@ -13,14 +13,11 @@ import (
 // daemon contains all the info needed by the goroutines inside the long-lived process
 type daemon struct {
 	lastFinishedAt time.Time
-
-	tracer    trace.Tracer
-	buildKite *buildkite.Client
-
-	wg            *sync.WaitGroup
-	sleepDuration time.Duration
-
-	cacheFilePath string
+	tracer         trace.Tracer
+	buildKite      *buildkite.Client
+	wg             *sync.WaitGroup
+	cacheFilePath  string
+	sleepDuration  time.Duration
 }
 
 // NewDaemon produce daemon struct that can be executed as a long-lived process
@@ -37,12 +34,12 @@ func NewDaemon(
 	lastFinishedAt := time.Now().Add(-1 * HoneycombMaxRetention)
 
 	return &daemon{
-		lastFinishedAt,
-		tracer,
-		buildKite,
-		wg,
-		sleepDuration,
-		cacheFilePath,
+		lastFinishedAt: lastFinishedAt,
+		tracer:         tracer,
+		buildKite:      buildKite,
+		wg:             wg,
+		sleepDuration:  sleepDuration,
+		cacheFilePath:  cacheFilePath,
 	}
 }
 
