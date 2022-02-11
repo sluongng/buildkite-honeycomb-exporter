@@ -43,7 +43,7 @@ func main() {
 
 	bk := initBuildKiteClient()
 
-	tracer, shutdown := initOtel(ctx)
+	tracer, shutdown := initOtel(ctx, ServiceName)
 	defer shutdown()
 
 	sleepDuration := 15 * time.Minute

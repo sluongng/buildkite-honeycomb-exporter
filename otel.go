@@ -54,7 +54,7 @@ func newDebugTracerProvider() *sdktrace.TracerProvider {
 }
 
 // initOtel returns a tracer object and a function that help handler graceful shutdown
-func initOtel(ctx context.Context) (trace.Tracer, func()) {
+func initOtel(ctx context.Context, serviceName string) (trace.Tracer, func()) {
 	// Init otel
 	exporter, err := newExporter(ctx)
 	if err != nil {
@@ -63,5 +63,5 @@ func initOtel(ctx context.Context) (trace.Tracer, func()) {
 
 	tp := newTraceProvider(exporter)
 
-	return tp.Tracer(ServiceName), func() { _ = tp.Shutdown(ctx) }
+	return tp.Tracer(serviceName), func() { _ = tp.Shutdown(ctx) }
 }
