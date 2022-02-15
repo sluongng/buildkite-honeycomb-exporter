@@ -63,6 +63,12 @@ func (d *daemon) processJob(ctx context.Context, buildNumber string, j *buildkit
 	}
 
 	// agent data
+	if j.Agent.Name != nil {
+		jSpan.SetAttributes(attribute.String("agent_name", *j.Agent.Name))
+	}
+	if j.Agent.Hostname != nil {
+		jSpan.SetAttributes(attribute.String("agent_hostname", *j.Agent.Hostname))
+	}
 	if j.Agent.IPAddress != nil {
 		jSpan.SetAttributes(attribute.String("agent_ip", *j.Agent.IPAddress))
 	}
