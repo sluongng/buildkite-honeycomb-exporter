@@ -24,9 +24,10 @@ func (d *daemon) processBuild(ctx context.Context, b buildkite.Build) {
 	buildCtx, buildSpan := d.tracer.Start(ctx, fmt.Sprintf("%d", *b.Number), trace.WithTimestamp(b.StartedAt.Time))
 
 	// build timing
-	buildSpan.AddEvent("created", trace.WithTimestamp(b.StartedAt.Time))
+	// reference: https://buildkite.com/docs/apis/rest-api/builds#timestamp-attributes
 	if b.ScheduledAt != nil {
-		buildSpan.AddEvent("scheduled", trace.WithTimestamp(b.ScheduledAt.Time))
+		buildSpan.SetAttributes(attribute.Int64("schedule_duration_ms", b.CreatedAt.Time.Sub(b.ScheduledAt.Time).Milliseconds()))
+		buildSpan.SetAttributes(attribute.Int64("create_duration_ms", b.StartedAt.Time.Sub(b.CreatedAt.Time).Milliseconds()))
 	}
 
 	// build state

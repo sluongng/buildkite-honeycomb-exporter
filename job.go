@@ -15,14 +15,24 @@ func (d *daemon) processJob(ctx context.Context, buildNumber string, j *buildkit
 		return
 	}
 
-	// agent timing
 	_, jSpan := d.tracer.Start(ctx, *j.Name, trace.WithTimestamp(j.StartedAt.Time))
-	jSpan.AddEvent("created", trace.WithTimestamp(j.CreatedAt.Time))
-	if j.ScheduledAt != nil {
-		jSpan.AddEvent("scheduled", trace.WithTimestamp(j.ScheduledAt.Time))
+
+	// job timing:
+	//   scheduled
+	//   created
+	//   runnabled
+	//   started
+	//   finished
+	//
+	// reference: https://buildkite.com/docs/apis/rest-api/builds#timestamp-attributes
+	if j.ScheduledAt != nil && j.CreatedAt != nil {
+		jSpan.SetAttributes(attribute.Int64("schedule_duration_ms", j.CreatedAt.Time.Sub(j.ScheduledAt.Time).Microseconds()))
+	}
+	if j.CreatedAt != nil && j.RunnableAt != nil {
+		jSpan.SetAttributes(attribute.Int64("create_duration_ms", j.RunnableAt.Time.Sub(j.CreatedAt.Time).Microseconds()))
 	}
 	if j.RunnableAt != nil {
-		jSpan.AddEvent("runnable", trace.WithTimestamp(j.RunnableAt.Time))
+		jSpan.SetAttributes(attribute.Int64("runnable_duration_ms", j.StartedAt.Time.Sub(j.RunnableAt.Time).Microseconds()))
 	}
 
 	// agent state
