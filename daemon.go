@@ -15,6 +15,7 @@ type daemon struct {
 	lastFinishedAt time.Time
 	tracer         trace.Tracer
 	buildKite      *buildkite.Client
+	pipelines      []string
 	wg             *sync.WaitGroup
 	cacheFilePath  string
 	sleepDuration  time.Duration
@@ -24,6 +25,7 @@ type daemon struct {
 func NewDaemon(
 	tracer trace.Tracer,
 	buildKite *buildkite.Client,
+	pipelines []string,
 	sleepDuration time.Duration,
 	cacheFilePath string,
 ) *daemon {
@@ -37,6 +39,7 @@ func NewDaemon(
 		lastFinishedAt: lastFinishedAt,
 		tracer:         tracer,
 		buildKite:      buildKite,
+		pipelines:      pipelines,
 		wg:             wg,
 		sleepDuration:  sleepDuration,
 		cacheFilePath:  cacheFilePath,
@@ -47,7 +50,11 @@ func NewDaemon(
 func (d *daemon) Exec(ctx context.Context) {
 	// TODO: implement graceful shutdown when SIGTERM/SIGKILL
 	for {
-		d.processBuildKite(ctx)
+		for _, pipeline := range d.pipelines {
+			d.wg.Add(1)
+			go d.processBuildKite(ctx, pipeline)
+		}
+		d.wg.Wait()
 
 		log.Printf("sleeping for %s", d.sleepDuration)
 		time.Sleep(d.sleepDuration)
@@ -55,7 +62,7 @@ func (d *daemon) Exec(ctx context.Context) {
 }
 
 // BuildKite pagination loop
-func (d *daemon) processBuildKite(ctx context.Context) {
+func (d *daemon) processBuildKite(ctx context.Context, pipeline string) {
 	cache := NewCache(d.cacheFilePath)
 	defer cache.fileStore.Close()
 
@@ -76,10 +83,9 @@ func (d *daemon) processBuildKite(ctx context.Context) {
 	}
 	for {
 		log.Println("Calling API on page", buildListOptions.Page)
-		builds, resp, err := d.buildKite.Builds.ListByPipeline(BuildKiteOrgName, BuildKitePipelineName, buildListOptions)
+		builds, resp, err := d.buildKite.Builds.ListByPipeline(BuildKiteOrgName, pipeline, buildListOptions)
 		if err != nil {
 			log.Printf("Issues calling BuildKite API: %v\n", err)
-			// TODO: backoff retry with retry limit?
 			continue
 		}
 
@@ -115,6 +121,5 @@ func (d *daemon) processBuildKite(ctx context.Context) {
 		log.Fatalf("error writing cache: %v", err)
 	}
 
-	// ensure all workers are finished
-	d.wg.Wait()
+	d.wg.Done()
 }

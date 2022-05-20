@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/buildkite/go-buildkite/v3/buildkite"
@@ -40,7 +41,6 @@ func initBuildKiteClient() *buildkite.Client {
 func main() {
 	// init bk client
 	ctx := context.Background()
-
 	bk := initBuildKiteClient()
 
 	tracer, shutdown := initOtel(ctx, ServiceName)
@@ -48,6 +48,7 @@ func main() {
 
 	sleepDuration := 15 * time.Minute
 
-	d := NewDaemon(tracer, bk, sleepDuration, ServiceCachePath)
-	d.Exec(ctx)
+	pipelines := strings.Split(BuildKitePipelineName, ",")
+
+	NewDaemon(tracer, bk, pipelines, sleepDuration, ServiceCachePath).Exec(ctx)
 }
